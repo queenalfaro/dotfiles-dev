@@ -60,6 +60,7 @@ if [ "$NEED_NODE" = true ]; then
         curl -fsSL "https://nodejs.org/dist/latest-v22.x/${NODE_FILE}" -o "/tmp/${NODE_FILE}"
         tar -xf "/tmp/${NODE_FILE}" -C "$NODE_DIR" --strip-components=1
         rm -f "/tmp/${NODE_FILE}"
+        ln -sf "$NODE_DIR/bin/"* "$LOCAL_BIN/"
         export PATH="$NODE_DIR/bin:$PATH"
     else
         echo "⚠️  [DOTFILES] Не удалось определить архив Node.js"
@@ -105,12 +106,11 @@ fi
 
 # 6. Прописываем пути в PATH шелла контейнера
 ENV_PATH_LINE='export PATH="$HOME/.local/bin:$HOME/.local/node/bin:$HOME/.pi/bin:$PATH"'
-if [ -f "$HOME/.bashrc" ]; then
-    grep -qxF "$ENV_PATH_LINE" "$HOME/.bashrc" || echo "$ENV_PATH_LINE" >> "$HOME/.bashrc"
-fi
-if [ -f "$HOME/.zshrc" ]; then
-    grep -qxF "$ENV_PATH_LINE" "$HOME/.zshrc" || echo "$ENV_PATH_LINE" >> "$HOME/.zshrc"
-fi
+for rc in "$HOME/.profile" "$HOME/.bashrc" "$HOME/.zshrc"; do
+    if [ -f "$rc" ]; then
+        grep -qxF "$ENV_PATH_LINE" "$rc" || echo "$ENV_PATH_LINE" >> "$rc"
+    fi
+done
 
 echo "--------------------------------------------------------"
 echo "✨ [DOTFILES] Окружение полностью готово к работе!"
