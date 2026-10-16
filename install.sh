@@ -95,21 +95,25 @@ if [ -d "$DOTFILES_DIR/.pi/agent/skills" ]; then
     ln -s "$DOTFILES_DIR/.pi/agent/skills" "$TARGET_PI_DIR/skills"
 fi
 
-# Симлинк для папки с расширениями (extensions)
-if [ -d "$DOTFILES_DIR/.pi/agent/extensions" ]; then
-    rm -rf "$TARGET_PI_DIR/extensions"
-    ln -s "$DOTFILES_DIR/.pi/agent/extensions" "$TARGET_PI_DIR/extensions"
-fi
-
 # 5. Получение секретов из 1Password
 if [ -n "$OP_SERVICE_ACCOUNT_TOKEN" ]; then
-    echo "🔐 [DOTFILES] Получение токенов Pi из 1Password..."
-    # Читаем auth_json из нашего сейфа Dev и заметки Pi-Agent
-    if op read "op://Dev/Pi-Agent/auth_json" > "$TARGET_PI_DIR/auth.json" 2>/dev/null; then
+    echo "🔐 [DOTFILES] Получение ключей провайдеров из 1Password..."
+    ITEM_JSON=$(op item get Pi-Agent --vault Dev --format json 2>/dev/null || true)
+    if [ -n "$ITEM_JSON" ]; then
+        echo "$ITEM_JSON" | jq '
+          [ .fields[]? 
+            | select(.label != null and .value != null and .value != "" and .label != "notesPlain" and .label != "notes")
+            | if .label == "auth_json" and (.value | startswith("{")) then
+                (.value | fromjson | to_entries[])
+              else
+                { key: .label, value: { type: "api_key", key: .value } }
+              end
+          ] | from_entries
+        ' > "$TARGET_PI_DIR/auth.json"
         chmod 600 "$TARGET_PI_DIR/auth.json"
-        echo "✅ [DOTFILES] Токены успешно записаны в auth.json!"
+        echo "✅ [DOTFILES] Ключи успешно записаны в auth.json!"
     else
-        echo "⚠️  [DOTFILES] Ошибка чтения auth_json из 1Password"
+        echo "⚠️  [DOTFILES] Не удалось получить данные из заметки Pi-Agent в 1Password"
     fi
 else
     echo "⚠️  [DOTFILES] Переменная OP_SERVICE_ACCOUNT_TOKEN не найдена. Пропуск авторизации."

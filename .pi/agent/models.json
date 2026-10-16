@@ -5,7 +5,6 @@
       "name": "MPP",
       "baseUrl": "http://host.docker.internal:8317/v1",
       "api": "openai-completions",
-      "apiKey": "$MPP_API_KEY",
       "models": [
         {
           "id": "gemini-3.8-flash-high",
