@@ -7,34 +7,74 @@ echo "--------------------------------------------------------"
 
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_PI_DIR="$HOME/.pi/agent"
+LOCAL_BIN="$HOME/.local/bin"
+mkdir -p "$LOCAL_BIN"
+export PATH="$LOCAL_BIN:$PATH"
 
 # Определение архитектуры процессора (x86_64 или arm64/Apple Silicon)
 ARCH="$(uname -m)"
 case "$ARCH" in
-  x86_64) OP_ARCH="amd64" ;;
-  aarch64|arm64) OP_ARCH="arm64" ;;
-  *) echo "Неподдерживаемая архитектура: $ARCH"; exit 1 ;;
+  x86_64)
+    OP_ARCH="amd64"
+    NODE_ARCH="x64"
+    ;;
+  aarch64|arm64)
+    OP_ARCH="arm64"
+    NODE_ARCH="arm64"
+    ;;
+  *)
+    echo "Неподдерживаемая архитектура: $ARCH"
+    exit 1
+    ;;
 esac
 
 # 1. Установка 1Password CLI (если не установлен)
 if ! command -v op &> /dev/null; then
     echo "📦 [DOTFILES] Установка 1Password CLI (${OP_ARCH})..."
-    curl -sS "https://downloads.1password.com/linux/tar/stable/${OP_ARCH}/op-linux-${OP_ARCH}-v2.30.0.tar.gz" -o /tmp/op.tar.gz
-    # Распаковываем в ~/.local/bin (не требует прав sudo)
-    mkdir -p "$HOME/.local/bin"
-    tar -xzf /tmp/op.tar.gz -C "$HOME/.local/bin"
-    rm /tmp/op.tar.gz
-    export PATH="$HOME/.local/bin:$PATH"
+    OP_VERSION="v2.30.0"
+    curl -fsSL "https://cache.agilebits.com/dist/1P/op2/pkg/${OP_VERSION}/op_linux_${OP_ARCH}_${OP_VERSION}.zip" -o /tmp/op.zip
+    unzip -o /tmp/op.zip op -d "$LOCAL_BIN" > /dev/null
+    chmod +x "$LOCAL_BIN/op"
+    rm -f /tmp/op.zip
 fi
 
-# 2. Установка Pi Coding Agent (если не установлен)
+# 2. Проверка и установка Node.js 22+ (необходим для Pi Coding Agent)
+NEED_NODE=false
+if ! command -v node &> /dev/null; then
+    NEED_NODE=true
+else
+    NODE_MAJOR="$(node -v | cut -d'.' -f1 | tr -d 'v')"
+    if [ "$NODE_MAJOR" -lt 22 ]; then
+        NEED_NODE=true
+    fi
+fi
+
+if [ "$NEED_NODE" = true ]; then
+    echo "📦 [DOTFILES] Установка автономного Node.js (v22.x)..."
+    NODE_DIR="$HOME/.local/node"
+    mkdir -p "$NODE_DIR"
+    curl -fsSL "https://nodejs.org/dist/latest-v22.x/SHASUMS256.txt" -o /tmp/node-shasums.txt
+    NODE_FILE=$(awk -v suffix="-linux-${NODE_ARCH}.tar.xz" '$2 ~ suffix { print $2; exit }' /tmp/node-shasums.txt)
+    rm -f /tmp/node-shasums.txt
+    if [ -n "$NODE_FILE" ]; then
+        curl -fsSL "https://nodejs.org/dist/latest-v22.x/${NODE_FILE}" -o "/tmp/${NODE_FILE}"
+        tar -xf "/tmp/${NODE_FILE}" -C "$NODE_DIR" --strip-components=1
+        rm -f "/tmp/${NODE_FILE}"
+        export PATH="$NODE_DIR/bin:$PATH"
+    else
+        echo "⚠️  [DOTFILES] Не удалось определить архив Node.js"
+    fi
+fi
+
+# 3. Установка Pi Coding Agent (если не установлен)
 if ! command -v pi &> /dev/null; then
     echo "🤖 [DOTFILES] Установка Pi Coding Agent..."
     curl -fsSL https://pi.dev/install.sh | sh
-    export PATH="$HOME/.local/bin:$HOME/.pi/bin:$PATH"
 fi
 
-# 3. Подготовка директорий и линковка скилов
+export PATH="$LOCAL_BIN:$HOME/.local/node/bin:$HOME/.pi/bin:$PATH"
+
+# 4. Подготовка директорий и линковка скилов
 echo "🔗 [DOTFILES] Линковка настроек и скилов Pi..."
 mkdir -p "$TARGET_PI_DIR"
 
@@ -49,23 +89,27 @@ if [ -d "$DOTFILES_DIR/.pi/agent/skills" ]; then
     ln -s "$DOTFILES_DIR/.pi/agent/skills" "$TARGET_PI_DIR/skills"
 fi
 
-# 4. Получение секретов из 1Password
+# 5. Получение секретов из 1Password
 if [ -n "$OP_SERVICE_ACCOUNT_TOKEN" ]; then
     echo "🔐 [DOTFILES] Получение токенов Pi из 1Password..."
-    # Читаем auth.json из нашего сейфа Dev и заметки Pi-Agent
-    op read "op://Dev/Pi-Agent/auth_json" > "$TARGET_PI_DIR/auth.json"
-    chmod 600 "$TARGET_PI_DIR/auth.json"
-    echo "✅ [DOTFILES] Токены успешно записаны в auth.json!"
+    # Читаем auth_json из нашего сейфа Dev и заметки Pi-Agent
+    if op read "op://Dev/Pi-Agent/auth_json" > "$TARGET_PI_DIR/auth.json" 2>/dev/null; then
+        chmod 600 "$TARGET_PI_DIR/auth.json"
+        echo "✅ [DOTFILES] Токены успешно записаны в auth.json!"
+    else
+        echo "⚠️  [DOTFILES] Ошибка чтения auth_json из 1Password"
+    fi
 else
     echo "⚠️  [DOTFILES] Переменная OP_SERVICE_ACCOUNT_TOKEN не найдена. Пропуск авторизации."
 fi
 
-# 5. Прописываем ~/.local/bin в PATH шелла контейнера
+# 6. Прописываем пути в PATH шелла контейнера
+ENV_PATH_LINE='export PATH="$HOME/.local/bin:$HOME/.local/node/bin:$HOME/.pi/bin:$PATH"'
 if [ -f "$HOME/.bashrc" ]; then
-    grep -qxF 'export PATH="$HOME/.local/bin:$PATH"' "$HOME/.bashrc" || echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+    grep -qxF "$ENV_PATH_LINE" "$HOME/.bashrc" || echo "$ENV_PATH_LINE" >> "$HOME/.bashrc"
 fi
 if [ -f "$HOME/.zshrc" ]; then
-    grep -qxF 'export PATH="$HOME/.local/bin:$PATH"' "$HOME/.zshrc" || echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.zshrc"
+    grep -qxF "$ENV_PATH_LINE" "$HOME/.zshrc" || echo "$ENV_PATH_LINE" >> "$HOME/.zshrc"
 fi
 
 echo "--------------------------------------------------------"
