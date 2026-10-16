@@ -84,6 +84,11 @@ if [ -f "$DOTFILES_DIR/.pi/agent/settings.json" ]; then
     ln -sf "$DOTFILES_DIR/.pi/agent/settings.json" "$TARGET_PI_DIR/settings.json"
 fi
 
+# Симлинк для models.json (кастомные LLM провайдеры)
+if [ -f "$DOTFILES_DIR/.pi/agent/models.json" ]; then
+    ln -sf "$DOTFILES_DIR/.pi/agent/models.json" "$TARGET_PI_DIR/models.json"
+fi
+
 # Симлинк для папки со скилами
 if [ -d "$DOTFILES_DIR/.pi/agent/skills" ]; then
     rm -rf "$TARGET_PI_DIR/skills"
