@@ -95,6 +95,12 @@ if [ -d "$DOTFILES_DIR/.pi/agent/skills" ]; then
     ln -s "$DOTFILES_DIR/.pi/agent/skills" "$TARGET_PI_DIR/skills"
 fi
 
+# Симлинк для папки с расширениями (extensions)
+if [ -d "$DOTFILES_DIR/.pi/agent/extensions" ]; then
+    rm -rf "$TARGET_PI_DIR/extensions"
+    ln -s "$DOTFILES_DIR/.pi/agent/extensions" "$TARGET_PI_DIR/extensions"
+fi
+
 # 5. Получение секретов из 1Password
 if [ -n "$OP_SERVICE_ACCOUNT_TOKEN" ]; then
     echo "🔐 [DOTFILES] Получение токенов Pi из 1Password..."

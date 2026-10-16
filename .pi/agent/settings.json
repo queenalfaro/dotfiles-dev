@@ -1,1 +1,4 @@
-{}
+{
+  "defaultProvider": "lmpp",
+  "defaultModel": "gemini-3.8-flash-high"
+}

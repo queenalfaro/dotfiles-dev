@@ -1,0 +1,34 @@
+{
+  "$schema": "https://pi.dev/schemas/models.schema.json",
+  "providers": {
+    "mpp": {
+      "name": "MPP",
+      "baseUrl": "http://host.docker.internal:8317/v1",
+      "api": "openai-completions",
+      "apiKey": "$MPP_API_KEY",
+      "models": [
+        {
+          "id": "gemini-3.8-flash-high",
+          "name": "Gemini 3.8 Flash (High Reasoning)",
+          "reasoning": true,
+          "contextWindow": 1000000,
+          "maxTokens": 64000
+        },
+        {
+          "id": "gemini-4-argon",
+          "name": "Gemini 4 Argon (Ultra Reasoning)",
+          "reasoning": true,
+          "contextWindow": 1000000,
+          "maxTokens": 64000
+        },
+        {
+          "id": "gemini-3.5-flash-lite",
+          "name": "Gemini 3.5 Flash-Lite (Fast)",
+          "reasoning": false,
+          "contextWindow": 500000,
+          "maxTokens": 32000
+        }
+      ]
+    }
+  }
+}
