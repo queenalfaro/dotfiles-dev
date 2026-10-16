@@ -1,44 +1,89 @@
 import fs from 'fs';
 import path from 'path';
+import { execFileSync } from 'child_process';
 
 export default async function (pi) {
   const agentDir = path.join(process.env.HOME || '/home/vscode', '.pi', 'agent');
-  const modelsPath = path.join(agentDir, 'models.json');
-  const authPath = path.join(agentDir, 'auth.json');
+  const cachePath = path.join(agentDir, 'ai-providers.json');
 
-  if (!fs.existsSync(modelsPath)) return;
+  let rawData = '';
+  if (fs.existsSync(cachePath)) {
+    try {
+      rawData = fs.readFileSync(cachePath, 'utf8');
+    } catch {}
+  }
 
-  let modelsConfig;
+  if (!rawData && process.env.OP_SERVICE_ACCOUNT_TOKEN) {
+    try {
+      rawData = execFileSync('op', ['item', 'get', 'AI-Providers-API', '--vault', 'Dev', '--format', 'json'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 5000
+      });
+      fs.writeFileSync(cachePath, rawData, { mode: 0o600 });
+    } catch {}
+  }
+
+  if (!rawData) return;
+
+  let item;
   try {
-    modelsConfig = JSON.parse(fs.readFileSync(modelsPath, 'utf8'));
+    item = JSON.parse(rawData);
   } catch {
     return;
   }
 
-  let authConfig = {};
-  try {
-    if (fs.existsSync(authPath)) {
-      authConfig = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+  const sectionsById = {};
+  for (const s of (item.sections || [])) {
+    if (s.id && s.label) sectionsById[s.id] = s.label;
+  }
+
+  const providers = {};
+  for (const f of (item.fields || [])) {
+    if (!f.section || !f.section.id) continue;
+    const sectionLabel = f.section.label || sectionsById[f.section.id];
+    if (!sectionLabel) continue;
+
+    const providerId = sectionLabel.toLowerCase().trim();
+    if (!providers[providerId]) {
+      providers[providerId] = {
+        id: providerId,
+        name: sectionLabel,
+        api: '',
+        url: '',
+        key: ''
+      };
     }
-  } catch {}
 
-  const providers = modelsConfig.providers || {};
-
-  for (const [providerId, provider] of Object.entries(providers)) {
-    // Если в models.json уже задан явный список models, не перезаписываем его
-    if (!provider.baseUrl || (Array.isArray(provider.models) && provider.models.length > 0)) {
-      continue;
+    const label = (f.label || '').toLowerCase();
+    if (label === 'text') {
+      providers[providerId].api = (f.value || '').trim();
+    } else if (label === 'url') {
+      providers[providerId].url = (f.value || '').trim();
+    } else if (label === 'password') {
+      providers[providerId].key = (f.value || '').trim();
     }
+  }
 
-    const apiKey = authConfig[providerId]?.key || provider.apiKey || 'dummy';
-    const baseUrl = provider.baseUrl.replace(/\/+$/, '');
+  for (const [providerId, prov] of Object.entries(providers)) {
+    // Поддерживаем только тип openai-completions
+    if (prov.api !== 'openai-completions' || !prov.url) continue;
+
+    let baseUrl = prov.url.replace(/\/+$/, '');
+    try {
+      const parsed = new URL(baseUrl);
+      if (parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost') {
+        parsed.hostname = 'host.docker.internal';
+        baseUrl = parsed.toString().replace(/\/+$/, '');
+      }
+    } catch {}
 
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 2000);
+      const timeout = setTimeout(() => controller.abort(), 2500);
 
       const res = await fetch(`${baseUrl}/models`, {
-        headers: apiKey && apiKey !== 'dummy' ? { Authorization: `Bearer ${apiKey}` } : {},
+        headers: prov.key ? { Authorization: `Bearer ${prov.key}` } : {},
         signal: controller.signal
       });
       clearTimeout(timeout);
@@ -49,24 +94,24 @@ export default async function (pi) {
       const items = Array.isArray(body.data) ? body.data : Array.isArray(body) ? body : [];
       if (items.length === 0) continue;
 
-      const dynamicModels = items.map((m) => {
-        const id = typeof m === 'string' ? m : m.id;
-        const lower = id.toLowerCase();
+      const models = items.map((m) => {
+        const rawId = typeof m === 'string' ? m : m.id;
+        const modelId = String(rawId).toLowerCase();
         const hasReasoning =
-          lower.includes('thinking') ||
-          lower.includes('reasoning') ||
-          lower.includes('high') ||
-          lower.includes('argon') ||
-          lower.includes('r1') ||
-          lower.includes('o1') ||
-          lower.includes('o3');
+          modelId.includes('thinking') ||
+          modelId.includes('reasoning') ||
+          modelId.includes('high') ||
+          modelId.includes('argon') ||
+          modelId.includes('r1') ||
+          modelId.includes('o1') ||
+          modelId.includes('o3');
 
         return {
-          id,
-          name: m.name || id,
+          id: modelId,
+          name: modelId,
           reasoning: hasReasoning,
           contextWindow: m.context_length || m.contextWindow || 1000000,
-          maxTokens: m.max_tokens || m.maxTokens || 64000,
+          maxTokens: m.max_tokens || m.maxTokens || (hasReasoning ? 64000 : 16384),
           input: ['text', 'image'],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
         };
@@ -74,12 +119,12 @@ export default async function (pi) {
 
       pi.registerProvider(providerId, {
         baseUrl,
-        api: provider.api || 'openai-completions',
-        apiKey,
-        models: dynamicModels
+        api: 'openai-completions',
+        apiKey: prov.key || 'dummy',
+        models
       });
     } catch {
-      // Игнорируем сетевые сбои, чтобы не блокировать запуск Pi при оффлайн-эндпоинте
+      // Игнорируем недоступные эндпоинты
     }
   }
 }

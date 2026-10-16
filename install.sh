@@ -75,18 +75,13 @@ fi
 
 export PATH="$LOCAL_BIN:$HOME/.local/node/bin:$HOME/.pi/bin:$PATH"
 
-# 4. Подготовка директорий и линковка скилов
+# 4. Подготовка директорий и линковка конфигураций Pi
 echo "🔗 [DOTFILES] Линковка настроек и скилов Pi..."
 mkdir -p "$TARGET_PI_DIR"
 
 # Симлинк для settings.json
 if [ -f "$DOTFILES_DIR/.pi/agent/settings.json" ]; then
     ln -sf "$DOTFILES_DIR/.pi/agent/settings.json" "$TARGET_PI_DIR/settings.json"
-fi
-
-# Симлинк для models.json (кастомные LLM провайдеры)
-if [ -f "$DOTFILES_DIR/.pi/agent/models.json" ]; then
-    ln -sf "$DOTFILES_DIR/.pi/agent/models.json" "$TARGET_PI_DIR/models.json"
 fi
 
 # Симлинк для папки со скилами
@@ -101,21 +96,14 @@ if [ -d "$DOTFILES_DIR/.pi/agent/extensions" ]; then
     ln -s "$DOTFILES_DIR/.pi/agent/extensions" "$TARGET_PI_DIR/extensions"
 fi
 
-# 5. Получение секретов из 1Password
+# 5. Получение конфигурации провайдеров из 1Password
 if [ -n "$OP_SERVICE_ACCOUNT_TOKEN" ]; then
-    echo "🔐 [DOTFILES] Получение ключей провайдеров из 1Password..."
-    ITEM_JSON=$(op item get "AI-Providers" --vault Dev --format json 2>/dev/null || op item get "Pi-Agent" --vault Dev --format json 2>/dev/null || true)
-    if [ -n "$ITEM_JSON" ]; then
-        echo "$ITEM_JSON" | jq '
-          [ .fields[]? 
-            | select(.label != null and .value != null and .value != "" and .label != "notesPlain" and .label != "notes")
-            | { key: .label, value: { type: "api_key", key: .value } }
-          ] | from_entries
-        ' > "$TARGET_PI_DIR/auth.json"
-        chmod 600 "$TARGET_PI_DIR/auth.json"
-        echo "✅ [DOTFILES] Ключи успешно записаны в auth.json!"
+    echo "🔐 [DOTFILES] Синхронизация провайдеров из 1Password (AI-Providers-API)..."
+    if op item get "AI-Providers-API" --vault Dev --format json > "$TARGET_PI_DIR/ai-providers.json" 2>/dev/null; then
+        chmod 600 "$TARGET_PI_DIR/ai-providers.json"
+        echo "✅ [DOTFILES] Конфигурация AI-Providers-API успешно сохранена!"
     else
-        echo "⚠️  [DOTFILES] Не удалось получить данные из заметки AI-Providers в 1Password"
+        echo "⚠️  [DOTFILES] Не удалось получить заметку AI-Providers-API из 1Password"
     fi
 else
     echo "⚠️  [DOTFILES] Переменная OP_SERVICE_ACCOUNT_TOKEN не найдена. Пропуск авторизации."
