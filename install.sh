@@ -38,26 +38,26 @@ if ! command -v op &> /dev/null; then
     rm -f /tmp/op.zip
 fi
 
-# 2. Проверка и установка Node.js 22+ (необходим для Pi Coding Agent)
+# 2. Проверка и установка Node.js 24+ (необходим для Pi Coding Agent)
 NEED_NODE=false
 if ! command -v node &> /dev/null; then
     NEED_NODE=true
 else
     NODE_MAJOR="$(node -v | cut -d'.' -f1 | tr -d 'v')"
-    if [ "$NODE_MAJOR" -lt 22 ]; then
+    if [ "$NODE_MAJOR" -lt 24 ]; then
         NEED_NODE=true
     fi
 fi
 
 if [ "$NEED_NODE" = true ]; then
-    echo "📦 [DOTFILES] Установка автономного Node.js (v22.x)..."
+    echo "📦 [DOTFILES] Установка автономного Node.js (v24.x)..."
     NODE_DIR="$HOME/.local/node"
     mkdir -p "$NODE_DIR"
-    curl -fsSL "https://nodejs.org/dist/latest-v22.x/SHASUMS256.txt" -o /tmp/node-shasums.txt
+    curl -fsSL "https://nodejs.org/dist/latest-v24.x/SHASUMS256.txt" -o /tmp/node-shasums.txt
     NODE_FILE=$(awk -v suffix="-linux-${NODE_ARCH}.tar.xz" '$2 ~ suffix { print $2; exit }' /tmp/node-shasums.txt)
     rm -f /tmp/node-shasums.txt
     if [ -n "$NODE_FILE" ]; then
-        curl -fsSL "https://nodejs.org/dist/latest-v22.x/${NODE_FILE}" -o "/tmp/${NODE_FILE}"
+        curl -fsSL "https://nodejs.org/dist/latest-v24.x/${NODE_FILE}" -o "/tmp/${NODE_FILE}"
         tar -xf "/tmp/${NODE_FILE}" -C "$NODE_DIR" --strip-components=1
         rm -f "/tmp/${NODE_FILE}"
         ln -sf "$NODE_DIR/bin/"* "$LOCAL_BIN/"

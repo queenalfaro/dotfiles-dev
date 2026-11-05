@@ -1,4 +1,5 @@
 {
   "defaultProvider": "mpp",
+  "defaultThinkingLevel": "high",
   "defaultModel": "gemini-3.8-flash-high"
 }
